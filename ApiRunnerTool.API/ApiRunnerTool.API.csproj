@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.5" />
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="10.1.7" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ApiRunnerTool.Business\ApiRunnerTool.Business.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="cloned_runs\**\*.cs" />
+    <Content Remove="cloned_runs\**\*" />
+    <None Include="cloned_runs\**\*" />
+  </ItemGroup>
+
+</Project>

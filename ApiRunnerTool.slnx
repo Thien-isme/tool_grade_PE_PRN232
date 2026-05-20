@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="ApiRunnerTool.API/ApiRunnerTool.API.csproj" />
+  <Project Path="ApiRunnerTool.Business/ApiRunnerTool.Business.csproj" />
+  <Project Path="ApiRunnerTool.Data/ApiRunnerTool.Data.csproj" />
+</Solution>

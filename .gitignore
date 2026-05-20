@@ -1,0 +1,95 @@
+# ============================================================
+# .gitignore for ApiRunnerTool
+# Stack: ASP.NET Core C# (.NET 10) + React + TypeScript (Vite)
+# ============================================================
+
+# ──────────────────────────────────────────
+# .NET / C# Build Artifacts
+# ──────────────────────────────────────────
+bin/
+obj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.userprefs
+.vs/
+*.pidb
+*.svd
+*.pdb
+*.opendb
+*.VC.db
+
+# NuGet packages
+packages/
+*.nupkg
+*.snupkg
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# MSBuild logs
+msbuild.log
+msbuild.err
+msbuild.wrn
+
+# Publish output
+publish/
+**/Properties/PublishProfiles/
+
+# ──────────────────────────────────────────
+# ASP.NET Core
+# ──────────────────────────────────────────
+appsettings.Development.json
+appsettings.Local.json
+
+# ──────────────────────────────────────────
+# Cloned Student Projects (runtime sandbox)
+# ──────────────────────────────────────────
+cloned_runs/
+
+# ──────────────────────────────────────────
+# Node.js / npm (Frontend React + Vite)
+# ──────────────────────────────────────────
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/.env
+frontend/.env.local
+frontend/.env.*.local
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+frontend/pnpm-debug.log*
+
+# ──────────────────────────────────────────
+# Runtime Data (Run History & Config)
+# ──────────────────────────────────────────
+# Stored locally in user profile (~/.apirunner/)
+# Not needed in source control
+
+# ──────────────────────────────────────────
+# IDE & Editors
+# ──────────────────────────────────────────
+.vscode/settings.json
+.vscode/launch.json
+.vscode/*.code-workspace
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ──────────────────────────────────────────
+# OS Files
+# ──────────────────────────────────────────
+Desktop.ini
+ehthumbs.db
+$RECYCLE.BIN/
+
+# ──────────────────────────────────────────
+# Logs
+# ──────────────────────────────────────────
+*.log
+logs/
