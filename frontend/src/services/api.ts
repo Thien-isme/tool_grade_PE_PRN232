@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { ProjectStatus, ProjectConfigEntity, EndpointInfo, RunHistoryEntity } from '../types';
+import type { ProjectStatus, ProjectConfigEntity, EndpointInfo, RunHistoryEntity, BatchSessionStatus, StudentTestResult } from '../types';
 
 const client = axios.create({
   baseURL: 'http://localhost:5155',
@@ -46,5 +46,36 @@ export const endpointApi = {
   },
   deleteHistory: async (id: string): Promise<void> => {
     await client.delete(`/api/endpoints/history/${id}`);
+  },
+};
+
+export const batchApi = {
+  browseFolder: async (): Promise<{ path?: string; cancelled: boolean; error?: string }> => {
+    const res = await client.get('/api/batch/browse');
+    return res.data;
+  },
+  getSession: async (): Promise<BatchSessionStatus> => {
+    const res = await client.get<BatchSessionStatus>('/api/batch/session');
+    return res.data;
+  },
+  startBatch: async (parentFolderPath: string): Promise<BatchSessionStatus> => {
+    const res = await client.post<BatchSessionStatus>('/api/batch/start', { parentFolderPath });
+    return res.data;
+  },
+  stopAll: async (): Promise<BatchSessionStatus> => {
+    const res = await client.post<BatchSessionStatus>('/api/batch/stop');
+    return res.data;
+  },
+  stopStudent: async (studentName: string): Promise<BatchSessionStatus> => {
+    const res = await client.post<BatchSessionStatus>(`/api/batch/stop/${encodeURIComponent(studentName)}`);
+    return res.data;
+  },
+  scanStudent: async (studentName: string): Promise<EndpointInfo[]> => {
+    const res = await client.post<EndpointInfo[]>(`/api/batch/scan/${encodeURIComponent(studentName)}`);
+    return res.data;
+  },
+  testStudent: async (studentName: string, endpoints: EndpointInfo[]): Promise<StudentTestResult> => {
+    const res = await client.post<StudentTestResult>(`/api/batch/test/${encodeURIComponent(studentName)}`, endpoints);
+    return res.data;
   },
 };

@@ -122,13 +122,217 @@ body {
   border: 1px solid rgba(59, 130, 246, 0.3);
 }
 
-/* Main Layout Grid */
+/* Main Layout Grid (single-project mode) */
 .main-content {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 24px;
   margin: 24px 0;
   flex: 1;
+}
+
+/* ──────────────────────────────────────────
+   Batch Grading Layout
+────────────────────────────────────────── */
+.batch-layout {
+  display: grid;
+  grid-template-columns: 360px 1fr;
+  gap: 24px;
+  margin: 24px 0;
+  align-items: start;
+}
+
+.batch-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  position: sticky;
+  top: 20px;
+  max-height: calc(100vh - 100px);
+  overflow-y: auto;
+}
+
+.batch-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* Student list card */
+.student-list-card {
+  padding: 20px;
+}
+
+.student-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.student-item {
+  position: relative;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 10px;
+  padding: 12px 14px;
+  cursor: pointer;
+  transition: var(--transition-smooth);
+}
+.student-item:hover {
+  background: rgba(255,255,255,0.07);
+  border-color: rgba(255,255,255,0.12);
+  transform: translateX(3px);
+}
+.student-item.selected {
+  background: rgba(59,130,246,0.08);
+  border-color: var(--color-primary);
+  box-shadow: var(--shadow-neon-blue);
+}
+
+.student-item-top {
+  margin-bottom: 6px;
+}
+.student-name {
+  display: block;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text-white);
+}
+.student-project {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+.student-item-meta {
+  margin-top: 4px;
+}
+.port-info {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+.student-error {
+  font-size: 0.72rem;
+  color: #f87171;
+  margin-top: 4px;
+}
+.student-arrow {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 16px;
+  height: 16px;
+  color: var(--color-primary);
+}
+.ep-count {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+/* Status pills */
+.status-pill {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 20px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.status-running {
+  background: rgba(16,185,129,0.15);
+  color: var(--color-success);
+  border: 1px solid rgba(16,185,129,0.3);
+}
+.status-starting {
+  background: rgba(59,130,246,0.15);
+  color: #60a5fa;
+  border: 1px solid rgba(59,130,246,0.3);
+}
+.status-failed {
+  background: rgba(239,68,68,0.15);
+  color: var(--color-danger);
+  border: 1px solid rgba(239,68,68,0.3);
+}
+.status-pending {
+  background: rgba(255,255,255,0.06);
+  color: var(--text-muted);
+  border: 1px solid rgba(255,255,255,0.1);
+}
+
+/* Student score badge (in list) */
+.student-score-badge {
+  display: flex;
+  align-items: baseline;
+  gap: 1px;
+}
+.score-num {
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: var(--color-success);
+}
+.score-den {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+.score-detail {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+}
+
+/* Batch empty / detail states */
+.batch-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 80px 24px;
+  text-align: center;
+  color: var(--text-muted);
+  gap: 12px;
+}
+.empty-icon-large {
+  width: 54px;
+  height: 54px;
+  opacity: 0.3;
+}
+
+.student-detail-header {
+  padding: 18px 24px;
+}
+.score-badge-large {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(16,185,129,0.1);
+  border: 1px solid rgba(16,185,129,0.25);
+  border-radius: 12px;
+  padding: 8px 16px;
+}
+.award-icon-sm {
+  width: 20px;
+  height: 20px;
+  color: var(--color-success);
+}
+.inline-icon {
+  width: 16px;
+  height: 16px;
+  display: inline;
+  vertical-align: middle;
+  margin-right: 6px;
+}
+
+@media (max-width: 1100px) {
+  .batch-layout {
+    grid-template-columns: 1fr;
+  }
+  .batch-sidebar {
+    position: static;
+    max-height: none;
+  }
 }
 
 .flex-column {

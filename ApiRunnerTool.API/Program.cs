@@ -44,6 +44,7 @@ builder.Services.AddSingleton<IProjectConfigRepository, ProjectConfigRepository>
 // Register Business Services (Singleton & Transient)
 builder.Services.AddSingleton<ILogStreamService, LogStreamService>();
 builder.Services.AddSingleton<IProjectRunnerService, ProjectRunnerService>();
+builder.Services.AddSingleton<IBatchRunnerService, BatchRunnerService>();
 builder.Services.AddTransient<ISwaggerScannerService, SwaggerScannerService>();
 builder.Services.AddTransient<IApiExecutorService, ApiExecutorService>();
 

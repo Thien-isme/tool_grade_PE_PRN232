@@ -1,183 +1,143 @@
 import { useState, useEffect, useRef } from 'react';
-import { Activity, Award } from 'lucide-react';
-import { ProjectSelector } from './components/ProjectSelector';
+import { Activity, Award, FolderSearch, RefreshCw, Square, Play, Users, ChevronRight, Loader } from 'lucide-react';
+import { batchApi } from './services/api';
+import { useLogStream } from './hooks/useLogStream';
 import { LogViewer } from './components/LogViewer';
 import { EndpointList } from './components/EndpointList';
 import { ResponseViewer } from './components/ResponseViewer';
-import { HistoryPanel } from './components/HistoryPanel';
-import { projectApi, endpointApi } from './services/api';
-import { useLogStream } from './hooks/useLogStream';
-import type { ProjectStatus, EndpointInfo, ApiResponse, RunHistoryEntity } from './types';
+import type { BatchSessionStatus, StudentProjectStatus, EndpointInfo, ApiResponse, StudentTestResult } from './types';
 
 function App() {
-  // State quản lý dự án target
-  const [status, setStatus] = useState<ProjectStatus>({
-    folderPath: '',
-    clonedPath: '',
-    projectName: '',
-    status: 'Stopped',
-    activePort: 0,
-    message: '',
-    error: '',
+  const [session, setSession] = useState<BatchSessionStatus>({
+    sessionFolderPath: '',
+    sessionStatus: 'Idle',
     startedAt: null,
+    students: [],
   });
 
-  // State danh sách endpoints quét được
-  const [endpoints, setEndpoints] = useState<EndpointInfo[]>([]);
-  // State kết quả test hiện tại: key = endpointPath, value = ApiResponse
-  const [testResults, setTestResults] = useState<Record<string, ApiResponse>>({});
-  // State endpoint đang được chọn xem chi tiết
+  const [folderPath, setFolderPath] = useState('');
+  const [browsing, setBrowsing] = useState(false);
+  const [starting, setStarting] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
+
+  // Per-student data (keyed by studentName)
+  const [selectedStudent, setSelectedStudent] = useState<StudentProjectStatus | null>(null);
+  const [studentEndpoints, setStudentEndpoints] = useState<Record<string, EndpointInfo[]>>({});
+  const [studentResults, setStudentResults] = useState<Record<string, StudentTestResult>>({});
+  const [studentTestResults, setStudentTestResults] = useState<Record<string, Record<string, ApiResponse>>>({});
+  const [scanningFor, setScanningFor] = useState<string | null>(null);
+  const [testingFor, setTestingFor] = useState<string | null>(null);
   const [selectedEndpoint, setSelectedEndpoint] = useState<EndpointInfo | null>(null);
-  // Lịch sử toàn bộ bài test
-  const [historyList, setHistoryList] = useState<RunHistoryEntity[]>([]);
-  const [selectedHistoryId, setSelectedHistoryId] = useState<string | undefined>(undefined);
 
-  // Trạng thái loading phụ trợ
-  const [scanning, setScanning] = useState(false);
-  const [testing, setTesting] = useState(false);
+  const sessionActive = session.sessionStatus === 'Running' || session.sessionStatus === 'Starting';
+  const { logs, clearLogs } = useLogStream(sessionActive || starting);
+  const prevStatusRef = useRef(session.sessionStatus);
 
-  // Hook SSE Luồng log
-  const { logs, clearLogs } = useLogStream(status.status === 'Running' || status.status === 'Starting');
-
-  // Lưu trạng thái trước đó để nhận biết sự kiện chuyển tiếp trạng thái
-  const prevStatusRef = useRef(status.status);
-
-  // Lấy dữ liệu status & lịch sử ban đầu
-  const fetchStatus = async () => {
-    try {
-      const res = await projectApi.getStatus();
-      setStatus(res);
-    } catch {
-      // Fail silently
-    }
-  };
-
-  const fetchHistory = async () => {
-    try {
-      const list = await endpointApi.getHistory();
-      setHistoryList(list);
-    } catch {
-      // Fail silently
-    }
-  };
-
+  // Poll session status
   useEffect(() => {
-    fetchStatus();
-    fetchHistory();
-
-    const interval = setInterval(() => {
-      fetchStatus();
-    }, 2500);
-
+    const fetch = async () => {
+      try {
+        const s = await batchApi.getSession();
+        setSession(s);
+      } catch { }
+    };
+    fetch();
+    const interval = setInterval(fetch, 2500);
     return () => clearInterval(interval);
   }, []);
 
-  // Tự động quét Endpoint ngay sau khi dự án khởi động thành công (từ Starting -> Running)
+  // Auto-scan when a student transitions to Running
   useEffect(() => {
-    if (prevStatusRef.current !== 'Running' && status.status === 'Running') {
-      // Đợi 1 giây để đảm bảo swagger endpoint hoàn toàn sẵn sàng trên IIS/Kestrel
-      setTimeout(() => {
-        handleScan();
-      }, 1000);
-    }
-    prevStatusRef.current = status.status;
-  }, [status.status]);
-
-  const handleScan = async () => {
-    setScanning(true);
-    setEndpoints([]);
-    setTestResults({});
-    setSelectedEndpoint(null);
-    try {
-      const list = await endpointApi.scan();
-      setEndpoints(list);
-    } catch {
-      // Fail silently
-    } finally {
-      setScanning(false);
-    }
-  };
-
-  const handleTestAll = async () => {
-    if (endpoints.length === 0) return;
-    setTesting(true);
-    setTestResults({});
-    try {
-      const history = await endpointApi.test(endpoints);
-      // Chuyển đổi mảng kết quả test thành Map lưu state
-      const resultsMap: Record<string, ApiResponse> = {};
-      history.results.forEach((res) => {
-        resultsMap[res.endpointPath] = res;
+    if (session.sessionStatus === 'Running') {
+      session.students.forEach(async (s) => {
+        if (s.status === 'Running' && !studentEndpoints[s.studentName]) {
+          await handleScanStudent(s.studentName);
+        }
       });
-      setTestResults(resultsMap);
-      fetchHistory(); // tải lại lịch sử mới
-    } catch {
-      // Fail silently
-    } finally {
-      setTesting(false);
     }
-  };
+    prevStatusRef.current = session.sessionStatus;
+  }, [session.sessionStatus, session.students]);
 
-  const handleSelectHistory = (run: RunHistoryEntity) => {
-    setSelectedHistoryId(run.id);
-    // Khôi phục danh sách endpoints từ lịch sử
-    const restoredEndpoints = run.results.map((r) => {
-      // Đoán parameter từ URL thực tế
-      const hasPathParams = r.executedUrl !== `http://localhost:${run.port}${r.endpointPath}`;
-      return {
-        path: r.endpointPath,
-        normalizedPath: r.executedUrl.replace(`http://localhost:${run.port}`, ''),
-        method: r.method || 'GET',
-        summary: '',
-        operationId: '',
-        tag: 'Restored',
-        parameters: [],
-        hasPathParams,
-      } as EndpointInfo;
-    });
-
-    setEndpoints(restoredEndpoints);
-
-    // Khôi phục kết quả test
-    const resultsMap: Record<string, ApiResponse> = {};
-    run.results.forEach((r) => {
-      resultsMap[r.endpointPath] = r;
-    });
-    setTestResults(resultsMap);
-    setSelectedEndpoint(null);
-  };
-
-  const handleDeleteHistory = async (id: string) => {
-    if (!window.confirm('Bạn có chắc chắn muốn xoá lịch sử chấm bài này?')) return;
+  const handleBrowse = async () => {
+    setBrowsing(true);
+    setErrorMsg('');
     try {
-      await endpointApi.deleteHistory(id);
-      if (selectedHistoryId === id) {
-        setSelectedHistoryId(undefined);
-        setEndpoints([]);
-        setTestResults({});
-        setSelectedEndpoint(null);
-      }
-      fetchHistory();
+      const res = await batchApi.browseFolder();
+      if (!res.cancelled && res.path) setFolderPath(res.path);
     } catch {
-      alert('Không thể xoá lịch sử.');
+      setErrorMsg('Không thể kết nối đến backend service.');
+    } finally {
+      setBrowsing(false);
     }
   };
 
-  // Tính điểm tổng hợp nhanh (để chấm bài học sinh)
-  const getScoringStats = () => {
-    if (endpoints.length === 0) return null;
-    const total = endpoints.length;
-    const passed = Object.values(testResults).filter((r) => r.isSuccess).length;
-    const failed = total - passed;
-    const score = ((passed / total) * 10).toFixed(1);
-    return { total, passed, failed, score };
+  const handleStart = async () => {
+    if (!folderPath.trim()) return;
+    setStarting(true);
+    setErrorMsg('');
+    setStudentEndpoints({});
+    setStudentResults({});
+    setStudentTestResults({});
+    setSelectedStudent(null);
+    try {
+      const s = await batchApi.startBatch(folderPath.trim());
+      setSession(s);
+    } catch {
+      setErrorMsg('Không thể kết nối đến backend service.');
+    } finally {
+      setStarting(false);
+    }
   };
 
-  const scoreStats = getScoringStats();
+  const handleStopAll = async () => {
+    try {
+      const s = await batchApi.stopAll();
+      setSession(s);
+    } catch { }
+  };
+
+  const handleScanStudent = async (studentName: string) => {
+    setScanningFor(studentName);
+    try {
+      const eps = await batchApi.scanStudent(studentName);
+      setStudentEndpoints(prev => ({ ...prev, [studentName]: eps }));
+    } catch { }
+    finally { setScanningFor(null); }
+  };
+
+  const handleTestStudent = async (studentName: string) => {
+    const eps = studentEndpoints[studentName] || [];
+    if (!eps.length) return;
+    setTestingFor(studentName);
+    try {
+      const result = await batchApi.testStudent(studentName, eps);
+      setStudentResults(prev => ({ ...prev, [studentName]: result }));
+      const map: Record<string, ApiResponse> = {};
+      result.results.forEach(r => { map[r.endpointPath] = r; });
+      setStudentTestResults(prev => ({ ...prev, [studentName]: map }));
+    } catch { }
+    finally { setTestingFor(null); }
+  };
+
+  const activeStudentName = selectedStudent?.studentName ?? '';
+  const activeEndpoints = studentEndpoints[activeStudentName] ?? [];
+  const activeTestResults = studentTestResults[activeStudentName] ?? {};
+  const activeResult = selectedEndpoint ? activeTestResults[selectedEndpoint.path] : null;
+  const activeScore = studentResults[activeStudentName];
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'Running': return 'status-running';
+      case 'Starting': return 'status-starting';
+      case 'Failed': return 'status-failed';
+      default: return 'status-pending';
+    }
+  };
+
+
 
   return (
     <div className="app-container">
-      {/* Navigation Header */}
       <header className="app-header">
         <div className="brand flex-center">
           <Activity className="brand-logo" />
@@ -189,70 +149,154 @@ function App() {
         </div>
       </header>
 
-      {/* Main Grid Layout */}
-      <main className="main-content">
-        <div className="grid-left flex-column">
-          {/* Chọn dự án */}
-          <ProjectSelector
-            status={status}
-            onStatusChange={(next) => {
-              setStatus(next);
-            }}
-            onStartLoading={() => {}}
-          />
+      <main className="batch-layout">
+        {/* ── LEFT PANEL: session control + student list ── */}
+        <aside className="batch-sidebar">
+          {/* Folder selection */}
+          <div className="card">
+            <div className="card-header">
+              <h2>📂 Chọn Thư Mục Chứa Bài Học Sinh</h2>
+              <p className="card-subtitle">Chọn 1 thư mục cha — mỗi thư mục con là bài của 1 học sinh.</p>
+            </div>
+            <div className="input-group">
+              <input
+                type="text"
+                placeholder="Ví dụ: G:\PRN232\Submissions"
+                value={folderPath}
+                onChange={e => setFolderPath(e.target.value)}
+                disabled={sessionActive || starting}
+                className="folder-input"
+              />
+              <button
+                type="button"
+                onClick={handleBrowse}
+                disabled={sessionActive || starting || browsing}
+                className="btn btn-secondary browse-btn"
+              >
+                {browsing ? <RefreshCw className="icon spinner" /> : <FolderSearch className="icon" />}
+                <span>{browsing ? 'Đang mở...' : 'Browse'}</span>
+              </button>
+            </div>
+            {errorMsg && <div className="error-alert">{errorMsg}</div>}
+            <div className="button-group">
+              {sessionActive ? (
+                <button onClick={handleStopAll} className="btn btn-danger stop-btn flex-center">
+                  <Square className="icon-solid" />
+                  <span>Dừng Tất Cả</span>
+                </button>
+              ) : (
+                <button onClick={handleStart} disabled={!folderPath.trim() || starting} className="btn btn-primary start-btn flex-center">
+                  {starting ? <Loader className="icon spinner" /> : <Play className="icon-solid" />}
+                  <span>{starting ? 'Đang khởi động...' : 'Chạy Tất Cả Dự Án'}</span>
+                </button>
+              )}
+            </div>
+          </div>
 
-          {/* Điểm số nhanh (nếu đã test) */}
-          {scoreStats && (
-            <div className="card score-card flex-between">
-              <div className="flex-center">
-                <Award className="award-icon" />
+          {/* Student list */}
+          {session.students.length > 0 && (
+            <div className="card student-list-card">
+              <div className="card-header flex-between">
                 <div>
-                  <h3>Kết Quả Chấm Bài (Tạm Tính)</h3>
-                  <p className="card-subtitle">
-                    Đạt <b>{scoreStats.passed}</b> trên tổng số <b>{scoreStats.total}</b> endpoint.
-                  </p>
+                  <h2><Users className="inline-icon" /> Danh Sách Học Sinh</h2>
+                  <p className="card-subtitle">{session.students.length} bài nộp được phát hiện</p>
                 </div>
               </div>
-              <div className="score-badge">
-                <span className="score-value">{scoreStats.score}</span>
-                <span className="score-scale">/10</span>
+              <div className="student-list">
+                {session.students.map(s => {
+                  const isSelected = selectedStudent?.studentName === s.studentName;
+                  const result = studentResults[s.studentName];
+                  return (
+                    <div
+                      key={s.studentName}
+                      onClick={() => { setSelectedStudent(s); setSelectedEndpoint(null); }}
+                      className={`student-item ${isSelected ? 'selected' : ''}`}
+                    >
+                      <div className="student-item-top flex-between">
+                        <div>
+                          <span className="student-name">{s.studentName}</span>
+                          <span className="student-project">{s.projectName}</span>
+                        </div>
+                        <span className={`status-pill ${getStatusColor(s.status)}`}>{s.status}</span>
+                      </div>
+                      {s.status === 'Running' && (
+                        <div className="student-item-meta flex-between">
+                          <span className="port-info">:{s.activePort}</span>
+                          {result ? (
+                            <div className="student-score-badge">
+                              <span className="score-num">{result.score.toFixed(1)}</span>
+                              <span className="score-den">/10</span>
+                              <span className="score-detail"> ({result.passed}/{result.total})</span>
+                            </div>
+                          ) : (
+                            <div className="student-stats">
+                              {studentEndpoints[s.studentName]?.length > 0 && (
+                                <span className="ep-count">{studentEndpoints[s.studentName].length} endpoints</span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      {s.status === 'Failed' && <p className="student-error">{s.error}</p>}
+                      {isSelected && <ChevronRight className="student-arrow" />}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
 
-          {/* Danh sách Endpoints */}
-          <EndpointList
-            endpoints={endpoints}
-            scanning={scanning}
-            testing={testing}
-            onScan={handleScan}
-            onTest={handleTestAll}
-            results={testResults}
-            selectedEndpoint={selectedEndpoint}
-            onSelectEndpoint={(ep) => setSelectedEndpoint(ep)}
-          />
-
-          {/* Lịch sử */}
-          <HistoryPanel
-            historyList={historyList}
-            onSelectRun={handleSelectHistory}
-            onDeleteRun={handleDeleteHistory}
-            selectedRunId={selectedHistoryId}
-          />
-        </div>
-
-        <div className="grid-right flex-column">
-          {/* Viewer kết quả phản hồi */}
-          <ResponseViewer
-            result={selectedEndpoint ? testResults[selectedEndpoint.path] : null}
-          />
-
-          {/* Terminal Logs */}
+          {/* Log viewer */}
           <LogViewer logs={logs} onClear={clearLogs} />
-        </div>
+        </aside>
+
+        {/* ── RIGHT PANEL: selected student detail ── */}
+        <section className="batch-detail">
+          {!selectedStudent ? (
+            <div className="card batch-empty-state">
+              <Users className="empty-icon-large" />
+              <h3>Chọn một học sinh từ danh sách</h3>
+              <p>Sau khi chọn, bạn có thể xem endpoints và chạy kiểm thử tự động.</p>
+            </div>
+          ) : (
+            <>
+              {/* Student header */}
+              <div className="card student-detail-header flex-between">
+                <div>
+                  <h2>🎓 {selectedStudent.studentName}</h2>
+                  <p className="card-subtitle">
+                    Dự án: <b>{selectedStudent.projectName}</b>
+                    {selectedStudent.activePort > 0 && <> · Port: <code>{selectedStudent.activePort}</code></>}
+                  </p>
+                </div>
+                {activeScore && (
+                  <div className="score-badge-large">
+                    <Award className="award-icon-sm" />
+                    <span className="score-value">{activeScore.score.toFixed(1)}</span>
+                    <span className="score-scale">/10</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Endpoint list for selected student */}
+              <EndpointList
+                endpoints={activeEndpoints}
+                scanning={scanningFor === activeStudentName}
+                testing={testingFor === activeStudentName}
+                onScan={() => handleScanStudent(activeStudentName)}
+                onTest={() => handleTestStudent(activeStudentName)}
+                results={activeTestResults}
+                selectedEndpoint={selectedEndpoint}
+                onSelectEndpoint={ep => setSelectedEndpoint(ep)}
+              />
+
+              {/* Response viewer */}
+              <ResponseViewer result={activeResult ?? null} />
+            </>
+          )}
+        </section>
       </main>
 
-      {/* Footer */}
       <footer className="app-footer">
         <p>© 2026 API Runner & Tester Core. Thiết kế chuyên nghiệp cho FPT Academic Grading.</p>
       </footer>
