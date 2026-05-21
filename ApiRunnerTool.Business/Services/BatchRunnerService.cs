@@ -9,6 +9,7 @@ using System.Net.Sockets;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using ApiRunnerTool.Business.Helpers;
 using ApiRunnerTool.Business.Interfaces;
 using ApiRunnerTool.Data.Models;
 
@@ -62,17 +63,29 @@ namespace ApiRunnerTool.Business.Services
 
             foreach (var dir in subDirs)
             {
-                var csprojFiles = Directory.GetFiles(dir, "*.csproj", SearchOption.AllDirectories);
-                if (csprojFiles.Length > 0)
+                var q1Csproj = StudentProjectFinder.FindQ1Csproj(dir);
+                if (q1Csproj != null)
                 {
-                    var studentName = Path.GetFileName(dir); // folder name = student identifier
-                    studentFolders.Add((studentName, dir, csprojFiles[0]));
+                    var studentName = Path.GetFileName(dir);
+                    studentFolders.Add((studentName, dir, q1Csproj));
+                }
+            }
+
+            // Thu muc chon truc tiep la 1 project (vd: .../Q1_API co .csproj o goc)
+            if (studentFolders.Count == 0)
+            {
+                var directCsproj = StudentProjectFinder.FindQ1Csproj(parentFolderPath);
+                if (directCsproj != null)
+                {
+                    var studentName = Path.GetFileName(parentFolderPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+                    studentFolders.Add((studentName, parentFolderPath, directCsproj));
+                    await _logStream.WriteLogAsync($"[BATCH] Phat hien 1 du an tai thu muc goc: {studentName}");
                 }
             }
 
             if (studentFolders.Count == 0)
             {
-                await _logStream.WriteLogAsync("[ERROR] Khong tim thay thu muc con nao chua file .csproj.");
+                await _logStream.WriteLogAsync("[ERROR] Khong tim thay file .csproj trong thu muc nay hoac thu muc con.");
                 _session = new BatchSessionStatus
                 {
                     SessionFolderPath = parentFolderPath,

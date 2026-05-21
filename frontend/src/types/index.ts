@@ -86,3 +86,32 @@ export interface StudentTestResult {
   total: number;
   score: number;
 }
+
+export interface GradingCriterionResult {
+  id: string;
+  description: string;
+  maxPoints: number;
+  earnedPoints: number;
+  passed: boolean;
+  detail: string;
+}
+
+export interface PeGradingResult {
+  studentName: string;
+  q1Score: number;
+  q2Score: number;
+  totalScore: number;
+  q1Max: number;
+  q2Max: number;
+  q1ProjectPath?: string | null;
+  q2ProjectPath?: string | null;
+  message?: string | null;
+  q1Criteria: GradingCriterionResult[];
+  q2Criteria: GradingCriterionResult[];
+}
+
+export interface PeBatchGradingSummary {
+  results: PeGradingResult[];
+  gradedCount: number;
+  failedCount: number;
+}

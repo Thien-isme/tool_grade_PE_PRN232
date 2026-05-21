@@ -1,11 +1,20 @@
 import axios from 'axios';
-import type { ProjectStatus, ProjectConfigEntity, EndpointInfo, RunHistoryEntity, BatchSessionStatus, StudentTestResult } from '../types';
+import type { ProjectStatus, ProjectConfigEntity, EndpointInfo, RunHistoryEntity, BatchSessionStatus, StudentTestResult, PeGradingResult, PeBatchGradingSummary } from '../types';
 
 const client = axios.create({
   baseURL: 'http://localhost:5155',
   headers: {
     'Content-Type': 'application/json',
   },
+  timeout: 30000,
+});
+
+const browseClient = axios.create({
+  baseURL: 'http://localhost:5155',
+  headers: {
+    'Content-Type': 'application/json',
+  },
+  timeout: 130000,
 });
 
 export const projectApi = {
@@ -26,7 +35,7 @@ export const projectApi = {
     return res.data;
   },
   browseFolder: async (): Promise<{ path?: string; cancelled: boolean; error?: string }> => {
-    const res = await client.get('/api/project/browse');
+    const res = await browseClient.get('/api/project/browse');
     return res.data;
   },
 };
@@ -51,7 +60,7 @@ export const endpointApi = {
 
 export const batchApi = {
   browseFolder: async (): Promise<{ path?: string; cancelled: boolean; error?: string }> => {
-    const res = await client.get('/api/batch/browse');
+    const res = await browseClient.get('/api/batch/browse');
     return res.data;
   },
   getSession: async (): Promise<BatchSessionStatus> => {
@@ -76,6 +85,21 @@ export const batchApi = {
   },
   testStudent: async (studentName: string, endpoints: EndpointInfo[]): Promise<StudentTestResult> => {
     const res = await client.post<StudentTestResult>(`/api/batch/test/${encodeURIComponent(studentName)}`, endpoints);
+    return res.data;
+  },
+};
+
+export const pe5Api = {
+  gradeStudent: async (studentName: string): Promise<PeGradingResult> => {
+    const res = await client.post<PeGradingResult>(`/api/batch/pe5/grade/${encodeURIComponent(studentName)}`);
+    return res.data;
+  },
+  gradeAll: async (): Promise<PeBatchGradingSummary> => {
+    const res = await client.post<PeBatchGradingSummary>('/api/batch/pe5/grade-all');
+    return res.data;
+  },
+  exportCsv: async (): Promise<Blob> => {
+    const res = await client.post('/api/batch/pe5/export', {}, { responseType: 'blob' });
     return res.data;
   },
 };

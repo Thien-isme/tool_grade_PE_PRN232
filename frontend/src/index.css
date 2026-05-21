@@ -325,6 +325,86 @@ body {
   margin-right: 6px;
 }
 
+/* PE Paper 5 grading */
+.pe-grading-card {
+  margin-bottom: 16px;
+}
+.pe-actions {
+  flex-wrap: wrap;
+  padding: 0 24px 16px;
+  gap: 8px;
+}
+.pe-scores-row {
+  display: flex;
+  gap: 12px;
+  padding: 0 24px 16px;
+}
+.pe-score-box {
+  flex: 1;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 10px;
+  padding: 12px 16px;
+}
+.pe-score-label {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+.pe-score-val {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--color-success);
+}
+.pe-criteria {
+  padding: 0 24px 20px;
+  max-height: 280px;
+  overflow-y: auto;
+}
+.pe-criteria h3 {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin: 12px 0 8px;
+}
+.criteria-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.criteria-list li {
+  display: grid;
+  grid-template-columns: 72px 1fr auto;
+  gap: 4px 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  margin-bottom: 6px;
+  font-size: 0.8rem;
+  background: rgba(255,255,255,0.03);
+}
+.criteria-list li.crit-pass {
+  border-left: 3px solid var(--color-success);
+}
+.criteria-list li.crit-fail {
+  border-left: 3px solid var(--color-danger);
+}
+.crit-id {
+  font-weight: 700;
+  color: var(--text-muted);
+}
+.crit-pts {
+  font-weight: 700;
+  color: var(--color-primary);
+}
+.crit-detail {
+  grid-column: 2 / -1;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+.pe-mini .score-detail {
+  font-size: 0.62rem;
+}
+
 @media (max-width: 1100px) {
   .batch-layout {
     grid-template-columns: 1fr;

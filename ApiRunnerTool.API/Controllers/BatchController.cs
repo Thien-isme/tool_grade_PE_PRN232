@@ -1,8 +1,8 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
+using ApiRunnerTool.API.Helpers;
 using ApiRunnerTool.Business.Interfaces;
 using ApiRunnerTool.Data.Models;
 
@@ -116,51 +116,15 @@ namespace ApiRunnerTool.API.Controllers
         {
             try
             {
-                var tempScriptPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "apirunner_batch_browse.ps1");
-                var scriptContent = @"
-Add-Type -AssemblyName System.Windows.Forms
-$dialog = New-Object System.Windows.Forms.FolderBrowserDialog
-$dialog.Description = 'Chon thu muc CHA chua tat ca cac du an cua hoc sinh'
-$dialog.ShowNewFolderButton = $false
-$result = $dialog.ShowDialog((New-Object System.Windows.Forms.Form -Property @{TopMost=$true}))
-if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
-    Write-Output $dialog.SelectedPath
-} else {
-    Write-Output 'CANCELLED'
-}
-";
-                System.IO.File.WriteAllText(tempScriptPath, scriptContent);
-
-                var startInfo = new System.Diagnostics.ProcessStartInfo
-                {
-                    FileName = "powershell.exe",
-                    Arguments = $"-NoProfile -ExecutionPolicy Bypass -File \"{tempScriptPath}\"",
-                    RedirectStandardOutput = true,
-                    UseShellExecute = false,
-                    CreateNoWindow = true
-                };
-
-                using var process = new System.Diagnostics.Process { StartInfo = startInfo };
-                process.Start();
-                var readTask = process.StandardOutput.ReadToEndAsync();
-                if (process.WaitForExit(45000))
-                {
-                    var output = readTask.Result.Trim();
-                    try { System.IO.File.Delete(tempScriptPath); } catch { }
-                    if (string.IsNullOrEmpty(output) || output == "CANCELLED")
-                        return Ok(new { cancelled = true });
-                    return Ok(new { path = output, cancelled = false });
-                }
-                else
-                {
-                    try { process.Kill(true); } catch { }
-                    try { System.IO.File.Delete(tempScriptPath); } catch { }
-                    return Ok(new { cancelled = true, error = "Timeout" });
-                }
+                var (cancelled, path, error) = NativeFolderPicker.Pick(
+                    "Chọn thư mục CHA chứa tất cả bài nộp (mỗi thư mục con = 1 sinh viên)");
+                if (cancelled)
+                    return Ok(new { cancelled = true, error });
+                return Ok(new { path, cancelled = false });
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = $"Loi mo Folder Picker: {ex.Message}" });
+                return StatusCode(500, new { message = $"Lỗi mở Folder Picker: {ex.Message}" });
             }
         }
     }

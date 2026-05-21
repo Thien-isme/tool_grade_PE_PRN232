@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
 import { Activity, Award, FolderSearch, RefreshCw, Square, Play, Users, ChevronRight, Loader } from 'lucide-react';
-import { batchApi } from './services/api';
+import { batchApi, pe5Api } from './services/api';
 import { useLogStream } from './hooks/useLogStream';
 import { LogViewer } from './components/LogViewer';
 import { EndpointList } from './components/EndpointList';
 import { ResponseViewer } from './components/ResponseViewer';
-import type { BatchSessionStatus, StudentProjectStatus, EndpointInfo, ApiResponse, StudentTestResult } from './types';
+import { PeGradingPanel } from './components/PeGradingPanel';
+import type { BatchSessionStatus, StudentProjectStatus, EndpointInfo, ApiResponse, StudentTestResult, PeGradingResult } from './types';
 
 function App() {
   const [session, setSession] = useState<BatchSessionStatus>({
@@ -28,6 +29,9 @@ function App() {
   const [scanningFor, setScanningFor] = useState<string | null>(null);
   const [testingFor, setTestingFor] = useState<string | null>(null);
   const [selectedEndpoint, setSelectedEndpoint] = useState<EndpointInfo | null>(null);
+  const [peGrades, setPeGrades] = useState<Record<string, PeGradingResult>>({});
+  const [gradingPe, setGradingPe] = useState(false);
+  const [gradingPeAll, setGradingPeAll] = useState(false);
 
   const sessionActive = session.sessionStatus === 'Running' || session.sessionStatus === 'Starting';
   const { logs, clearLogs } = useLogStream(sessionActive || starting);
@@ -63,9 +67,13 @@ function App() {
     setErrorMsg('');
     try {
       const res = await batchApi.browseFolder();
-      if (!res.cancelled && res.path) setFolderPath(res.path);
+      if (!res.cancelled && res.path) {
+        setFolderPath(res.path);
+      } else if (res.error) {
+        setErrorMsg(res.error);
+      }
     } catch {
-      setErrorMsg('Không thể kết nối đến backend service.');
+      setErrorMsg('Không thể mở hộp thoại hoặc hết thời gian chờ. Bạn có thể dán đường dẫn thư mục vào ô bên cạnh.');
     } finally {
       setBrowsing(false);
     }
@@ -78,6 +86,7 @@ function App() {
     setStudentEndpoints({});
     setStudentResults({});
     setStudentTestResults({});
+    setPeGrades({});
     setSelectedStudent(null);
     try {
       const s = await batchApi.startBatch(folderPath.trim());
@@ -124,6 +133,50 @@ function App() {
   const activeTestResults = studentTestResults[activeStudentName] ?? {};
   const activeResult = selectedEndpoint ? activeTestResults[selectedEndpoint.path] : null;
   const activeScore = studentResults[activeStudentName];
+  const activePeGrade = selectedStudent ? peGrades[activeStudentName] : null;
+
+  const handleGradePe5 = async () => {
+    if (!activeStudentName) return;
+    setGradingPe(true);
+    setErrorMsg('');
+    try {
+      const r = await pe5Api.gradeStudent(activeStudentName);
+      setPeGrades(prev => ({ ...prev, [activeStudentName]: r }));
+    } catch {
+      setErrorMsg('Không thể chấm PE — kiểm tra backend.');
+    } finally {
+      setGradingPe(false);
+    }
+  };
+
+  const handleGradePe5All = async () => {
+    setGradingPeAll(true);
+    setErrorMsg('');
+    try {
+      const summary = await pe5Api.gradeAll();
+      const map: Record<string, PeGradingResult> = {};
+      summary.results.forEach(r => { map[r.studentName] = r; });
+      setPeGrades(map);
+    } catch {
+      setErrorMsg('Không thể chấm tất cả — kiểm tra backend.');
+    } finally {
+      setGradingPeAll(false);
+    }
+  };
+
+  const handleExportPe5 = async () => {
+    try {
+      const blob = await pe5Api.exportCsv();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `PE_Paper5_Grades_${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      setErrorMsg('Export CSV thất bại.');
+    }
+  };
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -156,7 +209,7 @@ function App() {
           <div className="card">
             <div className="card-header">
               <h2>📂 Chọn Thư Mục Chứa Bài Học Sinh</h2>
-              <p className="card-subtitle">Chọn 1 thư mục cha — mỗi thư mục con là bài của 1 học sinh.</p>
+              <p className="card-subtitle">Chọn thư mục cha (mỗi thư mục con = 1 SV) hoặc chọn trực tiếp 1 project (vd: Q1_API). Browse: kiểm tra taskbar nếu không thấy hộp thoại.</p>
             </div>
             <div className="input-group">
               <input
@@ -174,7 +227,7 @@ function App() {
                 className="btn btn-secondary browse-btn"
               >
                 {browsing ? <RefreshCw className="icon spinner" /> : <FolderSearch className="icon" />}
-                <span>{browsing ? 'Đang mở...' : 'Browse'}</span>
+                <span>{browsing ? 'Chọn thư mục...' : 'Browse'}</span>
               </button>
             </div>
             {errorMsg && <div className="error-alert">{errorMsg}</div>}
@@ -206,6 +259,7 @@ function App() {
                 {session.students.map(s => {
                   const isSelected = selectedStudent?.studentName === s.studentName;
                   const result = studentResults[s.studentName];
+                  const pe = peGrades[s.studentName];
                   return (
                     <div
                       key={s.studentName}
@@ -222,7 +276,13 @@ function App() {
                       {s.status === 'Running' && (
                         <div className="student-item-meta flex-between">
                           <span className="port-info">:{s.activePort}</span>
-                          {result ? (
+                          {pe ? (
+                            <div className="student-score-badge pe-mini">
+                              <span className="score-num">{pe.totalScore.toFixed(1)}</span>
+                              <span className="score-den">/10</span>
+                              <span className="score-detail"> Q1:{pe.q1Score} Q2:{pe.q2Score}</span>
+                            </div>
+                          ) : result ? (
                             <div className="student-score-badge">
                               <span className="score-num">{result.score.toFixed(1)}</span>
                               <span className="score-den">/10</span>
@@ -269,14 +329,31 @@ function App() {
                     {selectedStudent.activePort > 0 && <> · Port: <code>{selectedStudent.activePort}</code></>}
                   </p>
                 </div>
-                {activeScore && (
+                {activePeGrade ? (
+                  <div className="score-badge-large">
+                    <Award className="award-icon-sm" />
+                    <span className="score-value">{activePeGrade.totalScore.toFixed(1)}</span>
+                    <span className="score-scale">/10</span>
+                  </div>
+                ) : activeScore ? (
                   <div className="score-badge-large">
                     <Award className="award-icon-sm" />
                     <span className="score-value">{activeScore.score.toFixed(1)}</span>
                     <span className="score-scale">/10</span>
                   </div>
-                )}
+                ) : null}
               </div>
+
+              <PeGradingPanel
+                result={activePeGrade}
+                grading={gradingPe}
+                gradingAll={gradingPeAll}
+                onGrade={handleGradePe5}
+                onGradeAll={handleGradePe5All}
+                onExport={handleExportPe5}
+                canGrade={!!selectedStudent}
+                hasStudents={session.students.length > 0}
+              />
 
               {/* Endpoint list for selected student */}
               <EndpointList

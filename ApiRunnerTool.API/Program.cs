@@ -47,6 +47,7 @@ builder.Services.AddSingleton<IProjectRunnerService, ProjectRunnerService>();
 builder.Services.AddSingleton<IBatchRunnerService, BatchRunnerService>();
 builder.Services.AddTransient<ISwaggerScannerService, SwaggerScannerService>();
 builder.Services.AddTransient<IApiExecutorService, ApiExecutorService>();
+builder.Services.AddSingleton<IPePaper5GradingService, PePaper5GradingService>();
 
 var app = builder.Build();
 
