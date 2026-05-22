@@ -273,9 +273,9 @@ function App() {
                         </div>
                         <span className={`status-pill ${getStatusColor(s.status)}`}>{s.status}</span>
                       </div>
-                      {s.status === 'Running' && (
+                      {(s.status === 'Running' || pe || result) && (
                         <div className="student-item-meta flex-between">
-                          <span className="port-info">:{s.activePort}</span>
+                          {s.activePort > 0 && <span className="port-info">:{s.activePort}</span>}
                           {pe ? (
                             <div className="student-score-badge pe-mini">
                               <span className="score-num">{pe.totalScore.toFixed(1)}</span>

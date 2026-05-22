@@ -27,10 +27,11 @@ function Test-PortOpen {
     $deadline = (Get-Date).AddSeconds($TimeoutSec)
     while ((Get-Date) -lt $deadline) {
         try {
-            $c = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
-            if ($c) { return $true }
+            $tcp = New-Object System.Net.Sockets.TcpClient("localhost", $Port)
+            $tcp.Close()
+            return $true
         } catch {}
-        Start-Sleep -Seconds 1
+        Start-Sleep -Milliseconds 500
     }
     return $false
 }
@@ -109,16 +110,21 @@ if (-not $npmExe) {
     }
 
     $viteLog = Join-Path $ScriptDir "frontend_vite.log"
-    Start-Process cmd.exe -ArgumentList "/c `"$npmExe`" run dev > `"$viteLog`" 2>&1" -WorkingDirectory $frontendDir -WindowStyle Hidden
+    $viteErrLog = Join-Path $ScriptDir "frontend_vite_err.log"
+    Start-Process -FilePath $npmExe -ArgumentList "run dev" -WorkingDirectory $frontendDir -WindowStyle Hidden -RedirectStandardOutput $viteLog -RedirectStandardError $viteErrLog
 
     if (Test-PortOpen -Port 5173 -TimeoutSec 90) {
         Write-Host "     [ok] Frontend: http://localhost:5173" -ForegroundColor Green
     } else {
         Write-Host "     [LOI] Frontend khong len cong 5173 trong 90s!" -ForegroundColor Red
-        Write-Host "     -> Mo them cua so: ChayFrontend.bat (de xem loi Vite)" -ForegroundColor Yellow
+        Write-Host "     -> Chay thu lenh 'npm run dev' trong thu muc 'frontend' de xem chi tiet loi." -ForegroundColor Yellow
         if (Test-Path $viteLog) {
             Write-Host "     -> Log: $viteLog" -ForegroundColor Yellow
             Get-Content $viteLog -Tail 15 | ForEach-Object { Write-Host "        $_" -ForegroundColor DarkGray }
+        }
+        if (Test-Path $viteErrLog) {
+            Write-Host "     -> Error Log: $viteErrLog" -ForegroundColor Yellow
+            Get-Content $viteErrLog -Tail 15 | ForEach-Object { Write-Host "        $_" -ForegroundColor Red }
         }
     }
 }

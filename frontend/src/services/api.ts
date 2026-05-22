@@ -17,6 +17,14 @@ const browseClient = axios.create({
   timeout: 130000,
 });
 
+const longClient = axios.create({
+  baseURL: 'http://localhost:5155',
+  headers: {
+    'Content-Type': 'application/json',
+  },
+  timeout: 600000, // 10 minutes
+});
+
 export const projectApi = {
   getStatus: async (): Promise<ProjectStatus> => {
     const res = await client.get<ProjectStatus>('/api/project/status');
@@ -91,15 +99,15 @@ export const batchApi = {
 
 export const pe5Api = {
   gradeStudent: async (studentName: string): Promise<PeGradingResult> => {
-    const res = await client.post<PeGradingResult>(`/api/batch/pe5/grade/${encodeURIComponent(studentName)}`);
+    const res = await longClient.post<PeGradingResult>(`/api/batch/pe5/grade/${encodeURIComponent(studentName)}`);
     return res.data;
   },
   gradeAll: async (): Promise<PeBatchGradingSummary> => {
-    const res = await client.post<PeBatchGradingSummary>('/api/batch/pe5/grade-all');
+    const res = await longClient.post<PeBatchGradingSummary>('/api/batch/pe5/grade-all');
     return res.data;
   },
   exportCsv: async (): Promise<Blob> => {
-    const res = await client.post('/api/batch/pe5/export', {}, { responseType: 'blob' });
+    const res = await longClient.post('/api/batch/pe5/export', {}, { responseType: 'blob' });
     return res.data;
   },
 };

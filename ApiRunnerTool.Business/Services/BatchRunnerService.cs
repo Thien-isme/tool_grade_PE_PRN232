@@ -26,6 +26,9 @@ namespace ApiRunnerTool.Business.Services
         // Map studentName -> (process, clonedPath, cts)
         private readonly ConcurrentDictionary<string, (Process Process, string ClonedPath, CancellationTokenSource Cts)> _runningProjects = new();
 
+        // Cached PE grading results
+        private readonly ConcurrentDictionary<string, PeGradingResult> _peGrades = new();
+
         private BatchSessionStatus _session = new();
 
         public BatchRunnerService(ILogStreamService logStream)
@@ -99,7 +102,7 @@ namespace ApiRunnerTool.Business.Services
             _session = new BatchSessionStatus
             {
                 SessionFolderPath = parentFolderPath,
-                SessionStatus = "Starting",
+                SessionStatus = "Running",
                 StartedAt = DateTime.UtcNow,
                 Students = studentFolders.Select(sf => new StudentProjectStatus
                 {
@@ -110,14 +113,9 @@ namespace ApiRunnerTool.Business.Services
                 }).ToList()
             };
 
-            // Launch each student project in parallel
-            var tasks = studentFolders.Select(sf => LaunchStudentAsync(sf.studentName, sf.folderPath, sf.csprojPath));
-            await Task.WhenAll(tasks);
+            ClearPeGrades();
 
-            var runningCount = _session.Students.Count(s => s.Status == "Running");
-            _session.SessionStatus = runningCount > 0 ? "Running" : "Stopped";
-            await _logStream.WriteLogAsync($"[BATCH] Phien cham bai san sang: {runningCount}/{studentFolders.Count} du an dang chay.");
-
+            await _logStream.WriteLogAsync($"[BATCH] Phien cham bai san sang. Tim thay {studentFolders.Count} du an hoc sinh (trang thai Pending).");
             return _session;
         }
 
@@ -201,7 +199,7 @@ namespace ApiRunnerTool.Business.Services
 
                 _runningProjects[studentName] = (process, clonedFolderPath, cts);
 
-                bool isUp = await WaitForPortAsync(port, 90);
+                bool isUp = await WaitForPortAsync(port, 30);
 
                 if (isUp && !process.HasExited)
                 {
@@ -357,6 +355,61 @@ namespace ApiRunnerTool.Business.Services
                 catch { Thread.Sleep(500); }
             }
             if (Directory.Exists(path)) Directory.Delete(path, true);
+        }
+
+        public async Task<bool> LaunchStudentByNameAsync(string studentName)
+        {
+            var studentStatus = _session.Students.FirstOrDefault(s => s.StudentName == studentName);
+            if (studentStatus == null) return false;
+
+            // Stop other running projects to ensure ONLY ONE runs at a time
+            foreach (var runningName in _runningProjects.Keys.ToList())
+            {
+                if (runningName != studentName)
+                {
+                    await StopStudentAsync(runningName);
+                }
+            }
+
+            // If already running, return true
+            if (studentStatus.Status == "Running" && _runningProjects.ContainsKey(studentName))
+            {
+                return true;
+            }
+
+            // Find csproj
+            var csproj = StudentProjectFinder.FindQ1Csproj(studentStatus.FolderPath);
+            if (csproj == null)
+            {
+                studentStatus.Status = "Failed";
+                studentStatus.Error = "Khong tim thay file .csproj";
+                await _logStream.WriteLogAsync($"[{studentName}] [FAILED] Khong tim thay file .csproj");
+                return false;
+            }
+
+            await LaunchStudentAsync(studentName, studentStatus.FolderPath, csproj);
+            return studentStatus.Status == "Running";
+        }
+
+        public void SavePeGrade(string studentName, PeGradingResult result)
+        {
+            _peGrades[studentName] = result;
+        }
+
+        public PeGradingResult? GetPeGrade(string studentName)
+        {
+            _peGrades.TryGetValue(studentName, out var result);
+            return result;
+        }
+
+        public List<PeGradingResult> GetAllPeGrades()
+        {
+            return _peGrades.Values.ToList();
+        }
+
+        public void ClearPeGrades()
+        {
+            _peGrades.Clear();
         }
 
         public void Dispose()
