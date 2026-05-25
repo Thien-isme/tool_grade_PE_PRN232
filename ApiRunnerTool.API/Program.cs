@@ -43,6 +43,8 @@ builder.Services.AddSingleton<IProjectConfigRepository, ProjectConfigRepository>
 
 // Register Business Services (Singleton & Transient)
 builder.Services.AddSingleton<ILogStreamService, LogStreamService>();
+builder.Services.AddSingleton<IDatabaseResetService, SqlServerDatabaseResetService>();
+builder.Services.AddSingleton<IQ1RubricExcelService, Q1RubricExcelService>();
 builder.Services.AddSingleton<IProjectRunnerService, ProjectRunnerService>();
 builder.Services.AddSingleton<IBatchRunnerService, BatchRunnerService>();
 builder.Services.AddTransient<ISwaggerScannerService, SwaggerScannerService>();

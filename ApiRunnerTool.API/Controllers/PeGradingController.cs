@@ -14,17 +14,20 @@ namespace ApiRunnerTool.API.Controllers
     {
         private readonly IBatchRunnerService _batchRunner;
         private readonly IPePaper5GradingService _peGrading;
+        private readonly IQ1RubricExcelService _rubricExcel;
 
-        public PeGradingController(IBatchRunnerService batchRunner, IPePaper5GradingService peGrading)
+        public PeGradingController(IBatchRunnerService batchRunner, IPePaper5GradingService peGrading, IQ1RubricExcelService rubricExcel)
         {
             _batchRunner = batchRunner;
             _peGrading = peGrading;
+            _rubricExcel = rubricExcel;
         }
 
         /// <summary>POST /api/batch/pe5/grade/{studentName}</summary>
         [HttpPost("grade/{studentName}")]
-        public async Task<IActionResult> GradeStudent(string studentName)
+        public async Task<IActionResult> GradeStudent(string studentName, [FromBody] PeGradeRequest request)
         {
+            var rubric = _rubricExcel.Load(request.RubricExcelPath);
             var session = _batchRunner.GetSession();
             var student = session.Students.Find(s => s.StudentName == studentName);
             if (student == null)
@@ -33,7 +36,7 @@ namespace ApiRunnerTool.API.Controllers
             try
             {
                 // 1. Khởi chạy dự án tuần tự
-                await _batchRunner.LaunchStudentByNameAsync(studentName);
+                await _batchRunner.LaunchStudentByNameAsync(studentName, rubric.Settings);
 
                 // Lấy lại thông tin sinh viên sau khi đã được cập nhật port/status
                 student = session.Students.Find(s => s.StudentName == studentName)!;
@@ -41,7 +44,7 @@ namespace ApiRunnerTool.API.Controllers
                 // 2. Chấm bài
                 var folder = !string.IsNullOrEmpty(student.FolderPath) ? student.FolderPath : student.ClonedPath;
                 var result = await _peGrading.GradeStudentAsync(
-                    student.StudentName, folder, student.ActivePort, student.Status);
+                    student.StudentName, folder, student.ActivePort, student.Status, request.RubricExcelPath);
 
                 // Lưu kết quả chấm vào cache
                 _batchRunner.SavePeGrade(studentName, result);
@@ -57,8 +60,9 @@ namespace ApiRunnerTool.API.Controllers
 
         /// <summary>POST /api/batch/pe5/grade-all</summary>
         [HttpPost("grade-all")]
-        public async Task<IActionResult> GradeAll()
+        public async Task<IActionResult> GradeAll([FromBody] PeGradeRequest request)
         {
+            var rubric = _rubricExcel.Load(request.RubricExcelPath);
             var session = _batchRunner.GetSession();
             if (session.Students.Count == 0)
                 return BadRequest(new { message = "Chưa có phiên chấm — hãy chọn thư mục và chạy batch trước." });
@@ -70,7 +74,7 @@ namespace ApiRunnerTool.API.Controllers
                 try
                 {
                     // 1. Khởi chạy dự án của từng học sinh
-                    await _batchRunner.LaunchStudentByNameAsync(s.StudentName);
+                    await _batchRunner.LaunchStudentByNameAsync(s.StudentName, rubric.Settings);
 
                     // Lấy thông tin sinh viên đã cập nhật
                     var student = session.Students.Find(x => x.StudentName == s.StudentName)!;
@@ -78,7 +82,7 @@ namespace ApiRunnerTool.API.Controllers
                     // 2. Chấm bài
                     var folder = !string.IsNullOrEmpty(student.FolderPath) ? student.FolderPath : student.ClonedPath;
                     var r = await _peGrading.GradeStudentAsync(
-                        student.StudentName, folder, student.ActivePort, student.Status);
+                        student.StudentName, folder, student.ActivePort, student.Status, request.RubricExcelPath);
 
                     // Lưu cache kết quả chấm
                     _batchRunner.SavePeGrade(s.StudentName, r);
@@ -109,8 +113,11 @@ namespace ApiRunnerTool.API.Controllers
 
         /// <summary>GET /api/batch/pe5/export — CSV từ kết quả grade-all gần nhất hoặc chạy chấm rồi export</summary>
         [HttpPost("export")]
-        public async Task<IActionResult> ExportCsv()
+        public async Task<IActionResult> ExportCsv([FromBody] PeGradeRequest request)
         {
+            var rubric = !string.IsNullOrWhiteSpace(request.RubricExcelPath)
+                ? _rubricExcel.Load(request.RubricExcelPath)
+                : null;
             var session = _batchRunner.GetSession();
             if (session.Students.Count == 0)
                 return BadRequest(new { message = "Không có dữ liệu để xuất." });
@@ -125,11 +132,11 @@ namespace ApiRunnerTool.API.Controllers
                 {
                     try
                     {
-                        await _batchRunner.LaunchStudentByNameAsync(s.StudentName);
+                        await _batchRunner.LaunchStudentByNameAsync(s.StudentName, rubric?.Settings);
                         var student = session.Students.Find(x => x.StudentName == s.StudentName)!;
                         var folder = !string.IsNullOrEmpty(student.FolderPath) ? student.FolderPath : student.ClonedPath;
                         var r = await _peGrading.GradeStudentAsync(
-                            student.StudentName, folder, student.ActivePort, student.Status);
+                            student.StudentName, folder, student.ActivePort, student.Status, request.RubricExcelPath);
                         _batchRunner.SavePeGrade(s.StudentName, r);
                         summary.Results.Add(r);
                         summary.GradedCount++;
@@ -156,6 +163,15 @@ namespace ApiRunnerTool.API.Controllers
             var csv = _peGrading.BuildExportCsv(summary);
             var bytes = Encoding.UTF8.GetPreamble().Concat(Encoding.UTF8.GetBytes(csv)).ToArray();
             return File(bytes, "text/csv; charset=utf-8", $"PE_Paper5_Grades_{DateTime.Now:yyyyMMdd_HHmmss}.csv");
+        }
+
+        [HttpGet("q1-template")]
+        public IActionResult DownloadQ1Template()
+        {
+            var bytes = _rubricExcel.BuildTemplate();
+            return File(bytes,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "Q1_Rubric_Template.xlsx");
         }
     }
 }

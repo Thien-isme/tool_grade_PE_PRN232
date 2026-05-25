@@ -32,6 +32,7 @@ function App() {
   const [peGrades, setPeGrades] = useState<Record<string, PeGradingResult>>({});
   const [gradingPe, setGradingPe] = useState(false);
   const [gradingPeAll, setGradingPeAll] = useState(false);
+  const [rubricExcelPath, setRubricExcelPath] = useState('');
 
   const sessionActive = session.sessionStatus === 'Running' || session.sessionStatus === 'Starting';
   const { logs, clearLogs } = useLogStream(sessionActive || starting);
@@ -137,10 +138,14 @@ function App() {
 
   const handleGradePe5 = async () => {
     if (!activeStudentName) return;
+    if (!rubricExcelPath.trim()) {
+      setErrorMsg('Vui long nhap duong dan file rubric Excel Q1 truoc khi cham.');
+      return;
+    }
     setGradingPe(true);
     setErrorMsg('');
     try {
-      const r = await pe5Api.gradeStudent(activeStudentName);
+      const r = await pe5Api.gradeStudent(activeStudentName, rubricExcelPath.trim());
       setPeGrades(prev => ({ ...prev, [activeStudentName]: r }));
     } catch {
       setErrorMsg('Không thể chấm PE — kiểm tra backend.');
@@ -150,10 +155,14 @@ function App() {
   };
 
   const handleGradePe5All = async () => {
+    if (!rubricExcelPath.trim()) {
+      setErrorMsg('Vui long nhap duong dan file rubric Excel Q1 truoc khi cham.');
+      return;
+    }
     setGradingPeAll(true);
     setErrorMsg('');
     try {
-      const summary = await pe5Api.gradeAll();
+      const summary = await pe5Api.gradeAll(rubricExcelPath.trim());
       const map: Record<string, PeGradingResult> = {};
       summary.results.forEach(r => { map[r.studentName] = r; });
       setPeGrades(map);
@@ -166,7 +175,7 @@ function App() {
 
   const handleExportPe5 = async () => {
     try {
-      const blob = await pe5Api.exportCsv();
+      const blob = await pe5Api.exportCsv(rubricExcelPath.trim());
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -175,6 +184,20 @@ function App() {
       URL.revokeObjectURL(url);
     } catch {
       setErrorMsg('Export CSV thất bại.');
+    }
+  };
+
+  const handleDownloadTemplate = async () => {
+    try {
+      const blob = await pe5Api.downloadTemplate();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'Q1_Rubric_Template.xlsx';
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      setErrorMsg('Khong tai duoc template Q1.');
     }
   };
 
@@ -312,6 +335,20 @@ function App() {
 
         {/* ── RIGHT PANEL: selected student detail ── */}
         <section className="batch-detail">
+          <PeGradingPanel
+            result={activePeGrade}
+            grading={gradingPe}
+            gradingAll={gradingPeAll}
+            onGrade={handleGradePe5}
+            onGradeAll={handleGradePe5All}
+            onExport={handleExportPe5}
+            rubricExcelPath={rubricExcelPath}
+            onRubricExcelPathChange={setRubricExcelPath}
+            onDownloadTemplate={handleDownloadTemplate}
+            canGrade={!!selectedStudent}
+            hasStudents={session.students.length > 0}
+          />
+
           {!selectedStudent ? (
             <div className="card batch-empty-state">
               <Users className="empty-icon-large" />
@@ -343,17 +380,6 @@ function App() {
                   </div>
                 ) : null}
               </div>
-
-              <PeGradingPanel
-                result={activePeGrade}
-                grading={gradingPe}
-                gradingAll={gradingPeAll}
-                onGrade={handleGradePe5}
-                onGradeAll={handleGradePe5All}
-                onExport={handleExportPe5}
-                canGrade={!!selectedStudent}
-                hasStudents={session.students.length > 0}
-              />
 
               {/* Endpoint list for selected student */}
               <EndpointList

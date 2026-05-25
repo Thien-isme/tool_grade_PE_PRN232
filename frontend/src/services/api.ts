@@ -98,16 +98,23 @@ export const batchApi = {
 };
 
 export const pe5Api = {
-  gradeStudent: async (studentName: string): Promise<PeGradingResult> => {
-    const res = await longClient.post<PeGradingResult>(`/api/batch/pe5/grade/${encodeURIComponent(studentName)}`);
+  gradeStudent: async (studentName: string, rubricExcelPath: string): Promise<PeGradingResult> => {
+    const res = await longClient.post<PeGradingResult>(
+      `/api/batch/pe5/grade/${encodeURIComponent(studentName)}`,
+      { rubricExcelPath },
+    );
     return res.data;
   },
-  gradeAll: async (): Promise<PeBatchGradingSummary> => {
-    const res = await longClient.post<PeBatchGradingSummary>('/api/batch/pe5/grade-all');
+  gradeAll: async (rubricExcelPath: string): Promise<PeBatchGradingSummary> => {
+    const res = await longClient.post<PeBatchGradingSummary>('/api/batch/pe5/grade-all', { rubricExcelPath });
     return res.data;
   },
-  exportCsv: async (): Promise<Blob> => {
-    const res = await longClient.post('/api/batch/pe5/export', {}, { responseType: 'blob' });
+  exportCsv: async (rubricExcelPath: string): Promise<Blob> => {
+    const res = await longClient.post('/api/batch/pe5/export', { rubricExcelPath }, { responseType: 'blob' });
+    return res.data;
+  },
+  downloadTemplate: async (): Promise<Blob> => {
+    const res = await longClient.get('/api/batch/pe5/q1-template', { responseType: 'blob' });
     return res.data;
   },
 };

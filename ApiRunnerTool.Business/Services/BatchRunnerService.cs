@@ -7,6 +7,7 @@ using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
 using ApiRunnerTool.Business.Helpers;
@@ -22,6 +23,7 @@ namespace ApiRunnerTool.Business.Services
     public class BatchRunnerService : IBatchRunnerService, IDisposable
     {
         private readonly ILogStreamService _logStream;
+        private readonly IDatabaseResetService _databaseReset;
 
         // Map studentName -> (process, clonedPath, cts)
         private readonly ConcurrentDictionary<string, (Process Process, string ClonedPath, CancellationTokenSource Cts)> _runningProjects = new();
@@ -31,9 +33,10 @@ namespace ApiRunnerTool.Business.Services
 
         private BatchSessionStatus _session = new();
 
-        public BatchRunnerService(ILogStreamService logStream)
+        public BatchRunnerService(ILogStreamService logStream, IDatabaseResetService databaseReset)
         {
             _logStream = logStream;
+            _databaseReset = databaseReset;
         }
 
         public BatchSessionStatus GetSession() => _session;
@@ -119,7 +122,7 @@ namespace ApiRunnerTool.Business.Services
             return _session;
         }
 
-        private async Task LaunchStudentAsync(string studentName, string folderPath, string csprojPath)
+        private async Task LaunchStudentAsync(string studentName, string folderPath, string csprojPath, Q1RubricSettings? q1Settings = null)
         {
             var studentStatus = _session.Students.FirstOrDefault(s => s.StudentName == studentName);
             if (studentStatus == null) return;
@@ -151,6 +154,13 @@ namespace ApiRunnerTool.Business.Services
 
                 var clonedCsprojPath = clonedCsprojFiles[0];
                 var clonedProjectFolder = Path.GetDirectoryName(clonedCsprojPath)!;
+
+                if (q1Settings != null)
+                {
+                    InjectMyCnn(clonedProjectFolder, q1Settings.ConnectionString);
+                    await _logStream.WriteLogAsync($"[{studentName}] [Q1] Da inject ConnectionStrings:MyCnn vao ban clone.");
+                    await _databaseReset.ResetAsync(q1Settings);
+                }
 
                 // Assign free port
                 int port = GetFreePort();
@@ -357,7 +367,7 @@ namespace ApiRunnerTool.Business.Services
             if (Directory.Exists(path)) Directory.Delete(path, true);
         }
 
-        public async Task<bool> LaunchStudentByNameAsync(string studentName)
+        public async Task<bool> LaunchStudentByNameAsync(string studentName, Q1RubricSettings? q1Settings = null)
         {
             var studentStatus = _session.Students.FirstOrDefault(s => s.StudentName == studentName);
             if (studentStatus == null) return false;
@@ -387,8 +397,34 @@ namespace ApiRunnerTool.Business.Services
                 return false;
             }
 
-            await LaunchStudentAsync(studentName, studentStatus.FolderPath, csproj);
+            await LaunchStudentAsync(studentName, studentStatus.FolderPath, csproj, q1Settings);
             return studentStatus.Status == "Running";
+        }
+
+        private static void InjectMyCnn(string projectFolder, string connectionString)
+        {
+            var settingsPath = StudentProjectFinder.FindAppsettingsPath(projectFolder)
+                ?? Path.Combine(projectFolder, "appsettings.json");
+
+            JsonObject root;
+            if (File.Exists(settingsPath))
+            {
+                var text = File.ReadAllText(settingsPath);
+                root = JsonNode.Parse(string.IsNullOrWhiteSpace(text) ? "{}" : text)?.AsObject() ?? new JsonObject();
+            }
+            else
+            {
+                root = new JsonObject();
+            }
+
+            if (root["ConnectionStrings"] is not JsonObject connectionStrings)
+            {
+                connectionStrings = new JsonObject();
+                root["ConnectionStrings"] = connectionStrings;
+            }
+
+            connectionStrings["MyCnn"] = connectionString;
+            File.WriteAllText(settingsPath, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
         }
 
         public void SavePeGrade(string studentName, PeGradingResult result)

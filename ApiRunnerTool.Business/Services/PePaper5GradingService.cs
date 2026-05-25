@@ -17,16 +17,18 @@ namespace ApiRunnerTool.Business.Services
     {
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly ILogStreamService _logStream;
+        private readonly IQ1RubricExcelService _rubricExcel;
 
         private static readonly string[] StudentItemFields = { "studentId", "studentName", "email", "gpa" };
 
-        public PePaper5GradingService(IHttpClientFactory httpClientFactory, ILogStreamService logStream)
+        public PePaper5GradingService(IHttpClientFactory httpClientFactory, ILogStreamService logStream, IQ1RubricExcelService rubricExcel)
         {
             _httpClientFactory = httpClientFactory;
             _logStream = logStream;
+            _rubricExcel = rubricExcel;
         }
 
-        public async Task<PeGradingResult> GradeStudentAsync(string studentName, string folderPath, int activePort, string projectStatus)
+        public async Task<PeGradingResult> GradeStudentAsync(string studentName, string folderPath, int activePort, string projectStatus, string? rubricExcelPath = null)
         {
             var result = new PeGradingResult { StudentName = studentName };
             var searchRoot = Directory.Exists(folderPath) ? folderPath : string.Empty;
@@ -42,7 +44,28 @@ namespace ApiRunnerTool.Business.Services
             result.Q2ProjectPath = StudentProjectFinder.FindQ2ProjectRoot(searchRoot);
 
             // ── Q1 (5 điểm) ──
-            result.Q1Criteria.Add(await CheckMyCnnAsync(result.Q1ProjectPath));
+            if (!string.IsNullOrWhiteSpace(rubricExcelPath))
+            {
+                if (projectStatus == "Running" && activePort > 0)
+                {
+                    result.Q1Criteria.AddRange(await RunQ1ExcelTestsAsync(activePort, rubricExcelPath));
+                }
+                else
+                {
+                    result.Q1Criteria.Add(new GradingCriterionResult
+                    {
+                        Id = "Q1-RUN",
+                        Description = "Q1 API dang chay de test rubric Excel",
+                        MaxPoints = 0,
+                        EarnedPoints = 0,
+                        Passed = false,
+                        Detail = $"Trang thai du an: {projectStatus}. Khong the chay Q1 rubric."
+                    });
+                }
+            }
+            else
+            {
+                result.Q1Criteria.Add(await CheckMyCnnAsync(result.Q1ProjectPath));
             if (projectStatus == "Running" && activePort > 0)
             {
                 result.Q1Criteria.AddRange(await RunQ1ApiTestsAsync(activePort, studentName));
@@ -59,6 +82,8 @@ namespace ApiRunnerTool.Business.Services
                     Detail = $"Trạng thái dự án: {projectStatus}. Hãy chạy batch trước khi chấm Q1."
                 };
                 result.Q1Criteria.Add(skip);
+            }
+
             }
 
             result.Q1Score = Math.Round(result.Q1Criteria.Sum(c => c.EarnedPoints), 2);
@@ -164,6 +189,233 @@ namespace ApiRunnerTool.Business.Services
             }
 
             return c;
+        }
+
+        private async Task<List<GradingCriterionResult>> RunQ1ExcelTestsAsync(int port, string rubricExcelPath)
+        {
+            var rubric = _rubricExcel.Load(rubricExcelPath);
+            var list = new List<GradingCriterionResult>();
+
+            foreach (var testCase in rubric.TestCases)
+            {
+                list.Add(await RunQ1ExcelTestAsync(port, testCase));
+            }
+
+            return list;
+        }
+
+        private async Task<GradingCriterionResult> RunQ1ExcelTestAsync(int port, Q1ApiTestCase testCase)
+        {
+            var criterion = new GradingCriterionResult
+            {
+                Id = testCase.Id,
+                Description = testCase.Name,
+                MaxPoints = testCase.Points
+            };
+
+            var client = _httpClientFactory.CreateClient();
+            client.Timeout = TimeSpan.FromSeconds(30);
+            var url = BuildUrl(port, testCase.Path, testCase.Query);
+
+            try
+            {
+                using var request = new HttpRequestMessage(new HttpMethod(testCase.Method), url);
+                ApplyHeaders(request, testCase.Headers);
+
+                if (!string.IsNullOrWhiteSpace(testCase.Body)
+                    && testCase.Method is "POST" or "PUT" or "PATCH")
+                {
+                    request.Content = new StringContent(testCase.Body, Encoding.UTF8, "application/json");
+                }
+
+                var started = DateTime.UtcNow;
+                using var response = await client.SendAsync(request);
+                var elapsedMs = (int)(DateTime.UtcNow - started).TotalMilliseconds;
+                var actualStatus = (int)response.StatusCode;
+                var actualJson = await response.Content.ReadAsStringAsync();
+
+                if (actualStatus != testCase.ExpectedStatus)
+                {
+                    criterion.Detail = $"Status {actualStatus}, expected {testCase.ExpectedStatus}. Body: {Truncate(actualJson, 300)}";
+                    return criterion;
+                }
+
+                var (matched, detail) = CompareJson(
+                    testCase.ExpectedJson,
+                    actualJson,
+                    testCase.CompareMode,
+                    testCase.ArrayCompareMode);
+
+                criterion.Passed = matched;
+                criterion.EarnedPoints = matched ? testCase.Points : 0;
+                criterion.Detail = matched
+                    ? $"OK - {testCase.Method} {testCase.Path} -> {actualStatus} ({elapsedMs}ms)"
+                    : detail;
+            }
+            catch (Exception ex)
+            {
+                criterion.Detail = $"Loi goi API hoac so sanh JSON: {ex.GetBaseException().Message}";
+            }
+
+            return criterion;
+        }
+
+        private static string BuildUrl(int port, string path, string query)
+        {
+            var normalizedPath = path.StartsWith('/') ? path : "/" + path;
+            var url = $"http://localhost:{port}{normalizedPath}";
+            if (!string.IsNullOrWhiteSpace(query))
+                url += query.StartsWith('?') ? query : "?" + query;
+            return url;
+        }
+
+        private static void ApplyHeaders(HttpRequestMessage request, string headers)
+        {
+            if (string.IsNullOrWhiteSpace(headers)) return;
+
+            var parts = headers
+                .Split(new[] { '\r', '\n', ';' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+            foreach (var part in parts)
+            {
+                var index = part.IndexOf(':');
+                if (index <= 0) continue;
+
+                var name = part[..index].Trim();
+                var value = part[(index + 1)..].Trim();
+                request.Headers.TryAddWithoutValidation(name, value);
+            }
+        }
+
+        private static (bool matched, string detail) CompareJson(string expectedJson, string actualJson, string compareMode, string arrayCompareMode)
+        {
+            try
+            {
+                using var expectedDoc = JsonDocument.Parse(expectedJson);
+                using var actualDoc = JsonDocument.Parse(actualJson);
+
+                var exact = compareMode.Equals("ExactJson", StringComparison.OrdinalIgnoreCase);
+                var ignoreArrayOrder = arrayCompareMode.Equals("IgnoreOrder", StringComparison.OrdinalIgnoreCase);
+                var matched = JsonMatches(expectedDoc.RootElement, actualDoc.RootElement, exact, ignoreArrayOrder, "$", out var detail);
+                return matched ? (true, "OK") : (false, detail);
+            }
+            catch (JsonException ex)
+            {
+                return (false, $"JSON khong hop le: {ex.Message}. Actual: {Truncate(actualJson, 300)}");
+            }
+        }
+
+        private static bool JsonMatches(JsonElement expected, JsonElement actual, bool exact, bool ignoreArrayOrder, string path, out string detail)
+        {
+            detail = string.Empty;
+
+            if (expected.ValueKind == JsonValueKind.Number && actual.ValueKind == JsonValueKind.Number)
+            {
+                if (expected.GetDecimal() == actual.GetDecimal()) return true;
+                detail = $"{path}: expected {expected}, actual {actual}";
+                return false;
+            }
+
+            if (expected.ValueKind == JsonValueKind.String && actual.ValueKind == JsonValueKind.String)
+            {
+                if (string.Equals(expected.GetString(), actual.GetString(), StringComparison.OrdinalIgnoreCase)) return true;
+                detail = $"{path}: expected \"{expected.GetString()}\", actual \"{actual.GetString()}\"";
+                return false;
+            }
+
+            if (expected.ValueKind != actual.ValueKind)
+            {
+                detail = $"{path}: expected {expected.ValueKind}, actual {actual.ValueKind}";
+                return false;
+            }
+
+            if (expected.ValueKind == JsonValueKind.Object)
+                return ObjectMatches(expected, actual, exact, ignoreArrayOrder, path, out detail);
+
+            if (expected.ValueKind == JsonValueKind.Array)
+                return ArrayMatches(expected, actual, exact, ignoreArrayOrder, path, out detail);
+
+            if (expected.ToString().Equals(actual.ToString(), StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            detail = $"{path}: expected {expected}, actual {actual}";
+            return false;
+        }
+
+        private static bool ObjectMatches(JsonElement expected, JsonElement actual, bool exact, bool ignoreArrayOrder, string path, out string detail)
+        {
+            detail = string.Empty;
+            var expectedProps = expected.EnumerateObject().ToList();
+            var actualProps = actual.EnumerateObject().ToList();
+
+            if (exact && expectedProps.Count != actualProps.Count)
+            {
+                detail = $"{path}: expected {expectedProps.Count} fields, actual {actualProps.Count} fields";
+                return false;
+            }
+
+            foreach (var expectedProp in expectedProps)
+            {
+                var actualProp = actualProps.FirstOrDefault(p => p.Name.Equals(expectedProp.Name, StringComparison.OrdinalIgnoreCase));
+                if (actualProp.Name == null)
+                {
+                    detail = $"{path}: missing field '{expectedProp.Name}'";
+                    return false;
+                }
+
+                if (!JsonMatches(expectedProp.Value, actualProp.Value, exact, ignoreArrayOrder, $"{path}.{expectedProp.Name}", out detail))
+                    return false;
+            }
+
+            return true;
+        }
+
+        private static bool ArrayMatches(JsonElement expected, JsonElement actual, bool exact, bool ignoreArrayOrder, string path, out string detail)
+        {
+            detail = string.Empty;
+            var expectedItems = expected.EnumerateArray().ToList();
+            var actualItems = actual.EnumerateArray().ToList();
+
+            if (exact && expectedItems.Count != actualItems.Count)
+            {
+                detail = $"{path}: expected {expectedItems.Count} items, actual {actualItems.Count} items";
+                return false;
+            }
+
+            if (!ignoreArrayOrder)
+            {
+                var count = exact ? expectedItems.Count : Math.Min(expectedItems.Count, actualItems.Count);
+                for (int i = 0; i < count; i++)
+                {
+                    if (!JsonMatches(expectedItems[i], actualItems[i], exact, ignoreArrayOrder, $"{path}[{i}]", out detail))
+                        return false;
+                }
+                return true;
+            }
+
+            var matchedActual = new bool[actualItems.Count];
+            for (int i = 0; i < expectedItems.Count; i++)
+            {
+                var found = false;
+                for (int j = 0; j < actualItems.Count; j++)
+                {
+                    if (matchedActual[j]) continue;
+                    if (JsonMatches(expectedItems[i], actualItems[j], exact, ignoreArrayOrder, $"{path}[{i}]", out _))
+                    {
+                        matchedActual[j] = true;
+                        found = true;
+                        break;
+                    }
+                }
+
+                if (!found)
+                {
+                    detail = $"{path}[{i}]: khong tim thay item khop trong actual array";
+                    return false;
+                }
+            }
+
+            return true;
         }
 
         private async Task<List<GradingCriterionResult>> RunQ1ApiTestsAsync(int port, string studentName)

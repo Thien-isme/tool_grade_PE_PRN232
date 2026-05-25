@@ -1,4 +1,4 @@
-import { Award, Download, Loader, ClipboardCheck } from 'lucide-react';
+import { Award, Download, FileSpreadsheet, Info, Loader, ClipboardCheck } from 'lucide-react';
 import type { PeGradingResult } from '../types';
 
 interface PeGradingPanelProps {
@@ -8,6 +8,9 @@ interface PeGradingPanelProps {
   onGrade: () => void;
   onGradeAll: () => void;
   onExport: () => void;
+  rubricExcelPath: string;
+  onRubricExcelPathChange: (path: string) => void;
+  onDownloadTemplate: () => void;
   canGrade: boolean;
   hasStudents: boolean;
 }
@@ -19,9 +22,14 @@ export const PeGradingPanel: React.FC<PeGradingPanelProps> = ({
   onGrade,
   onGradeAll,
   onExport,
+  rubricExcelPath,
+  onRubricExcelPathChange,
+  onDownloadTemplate,
   canGrade,
   hasStudents,
 }) => {
+  const canRunQ1Rubric = !!rubricExcelPath.trim();
+
   return (
     <div className="card pe-grading-card">
       <div className="card-header flex-between">
@@ -38,11 +46,39 @@ export const PeGradingPanel: React.FC<PeGradingPanelProps> = ({
         )}
       </div>
 
+      <div className="q1-rubric-box">
+        <div className="q1-rubric-top flex-between">
+          <div>
+            <h3><FileSpreadsheet className="inline-icon" /> Rubric Excel Q1</h3>
+            <p className="card-subtitle">Tool se doc Settings, inject MyCnn, reset SQL va so sanh response voi ExpectedJson.</p>
+          </div>
+          <button
+            type="button"
+            onClick={onDownloadTemplate}
+            className="btn btn-secondary flex-center"
+          >
+            <Download className="icon" />
+            <span>Lay template</span>
+          </button>
+        </div>
+        <input
+          type="text"
+          className="folder-input rubric-input"
+          value={rubricExcelPath}
+          onChange={e => onRubricExcelPathChange(e.target.value)}
+          placeholder="Vi du: D:\PRN232\Rubrics\PE5\Q1_Rubric.xlsx"
+        />
+        <div className="usage-guide">
+          <Info className="inline-icon" />
+          <span>Sheet Settings chi can ConnectionString va SqlScriptPath. Sheet Q1_TestCases khai bao Method, Path, Body, ExpectedStatus, ExpectedJson. Moi sinh vien duoc reset DB truoc khi cham.</span>
+        </div>
+      </div>
+
       <div className="pe-actions button-group">
         <button
           type="button"
           onClick={onGrade}
-          disabled={!canGrade || grading || gradingAll}
+          disabled={!canGrade || !canRunQ1Rubric || grading || gradingAll}
           className="btn btn-primary flex-center"
         >
           {grading ? <Loader className="icon spinner" /> : <ClipboardCheck className="icon" />}
@@ -51,7 +87,7 @@ export const PeGradingPanel: React.FC<PeGradingPanelProps> = ({
         <button
           type="button"
           onClick={onGradeAll}
-          disabled={!hasStudents || grading || gradingAll}
+          disabled={!hasStudents || !canRunQ1Rubric || grading || gradingAll}
           className="btn btn-secondary flex-center"
         >
           {gradingAll ? <Loader className="icon spinner" /> : <ClipboardCheck className="icon" />}
@@ -60,7 +96,7 @@ export const PeGradingPanel: React.FC<PeGradingPanelProps> = ({
         <button
           type="button"
           onClick={onExport}
-          disabled={!hasStudents || gradingAll}
+          disabled={!hasStudents || !canRunQ1Rubric || gradingAll}
           className="btn btn-secondary flex-center"
         >
           <Download className="icon" />
